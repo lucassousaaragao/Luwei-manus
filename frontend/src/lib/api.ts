@@ -9,7 +9,6 @@ async function request<T = any>(path: string, options?: RequestInitWithTimeout):
   const controller = new AbortController();
   const timeout = options?.timeout ?? 30000;
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
       ...options,
@@ -31,41 +30,53 @@ async function request<T = any>(path: string, options?: RequestInitWithTimeout):
 }
 
 export const api = {
-  getSessions: () => request('/api/chat/sessions'),
-  createSession: (title: string, model: string) =>
-    request('/api/chat/sessions', { method: 'POST', body: JSON.stringify({ title, model }) }),
+  // Auth
+  login: (email: string, password: string) =>
+    request<{ token: string; user: { id: number; email: string; name: string } }>('/api/auth/login', {
+      method: 'POST', body: JSON.stringify({ email, password }),
+    }),
+  register: (email: string, password: string, name: string) =>
+    request<{ token: string; user: { id: number; email: string; name: string } }>('/api/auth/register', {
+      method: 'POST', body: JSON.stringify({ email, password, name }),
+    }),
+  me: () => request<{ id: number; email: string; name: string }>('/api/auth/me'),
+
+  // Sessions
+  getSessions: (workspaceId?: string) =>
+    request(`/api/chat/sessions${workspaceId ? `?workspace_id=${workspaceId}` : ''}`),
+  createSession: (title: string, model: string, mode = 'chat', speed = 'medium', workspaceId?: string) =>
+    request('/api/chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ title, model, mode, speed, workspace_id: workspaceId }),
+    }),
   getSession: (id: string) => request(`/api/chat/sessions/${id}`),
+  updateSession: (id: string, data: { title?: string; model?: string; mode?: string; speed?: string }) =>
+    request(`/api/chat/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteSession: (id: string) =>
     request(`/api/chat/sessions/${id}`, { method: 'DELETE' }),
   sendMessage: (sessionId: string, content: string) =>
     request(`/api/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
 
-  login: (email: string, password: string) =>
-    request<{ token: string; user: { id: number; email: string; name: string } }>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    }),
-  register: (email: string, password: string, name: string) =>
-    request<{ token: string; user: { id: number; email: string; name: string } }>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, name }),
-    }),
-  me: () => request<{ id: number; email: string; name: string }>('/api/auth/me'),
+  // Models
+  getModels: () => request('/api/models'),
+  getProviders: () => request('/api/models/providers'),
 
-  sessions: {
-    list: () => request<{ id: number; title: string; created_at: string }[]>('/api/sessions'),
-    get: (id: number) => request<{ id: number; title: string; created_at: string; messages: any[] }>(`/api/sessions/${id}`),
-    create: (title?: string) =>
-      request<{ id: number; title: string; created_at: string }>('/api/sessions', {
-        method: 'POST',
-        body: JSON.stringify({ title }),
-      }),
-    delete: (id: number) =>
-      request<void>(`/api/sessions/${id}`, { method: 'DELETE' }),
-    patch: (id: number, data: { title?: string }) =>
-      request<{ id: number; title: string; created_at: string }>(`/api/sessions/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
-  },
+  // Workspaces
+  getWorkspaces: () => request('/api/workspaces'),
+  createWorkspace: (name: string, description?: string) =>
+    request('/api/workspaces', { method: 'POST', body: JSON.stringify({ name, description }) }),
+  updateWorkspace: (id: string, data: { name?: string; description?: string }) =>
+    request(`/api/workspaces/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWorkspace: (id: string) =>
+    request(`/api/workspaces/${id}`, { method: 'DELETE' }),
+
+  // MCP
+  getMcpConfigs: (workspaceId: string) =>
+    request(`/api/mcp/configs?workspace_id=${workspaceId}`),
+  createMcpConfig: (data: { workspace_id: string; name: string; type: string; command?: string; url?: string; args?: string[] }) =>
+    request('/api/mcp/configs', { method: 'POST', body: JSON.stringify(data) }),
+  updateMcpConfig: (id: string, data: any) =>
+    request(`/api/mcp/configs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMcpConfig: (id: string) =>
+    request(`/api/mcp/configs/${id}`, { method: 'DELETE' }),
 };

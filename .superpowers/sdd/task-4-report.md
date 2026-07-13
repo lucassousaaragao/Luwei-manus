@@ -66,5 +66,5 @@ Both modules import cleanly — no syntax or import errors.
 ### Commit
 
 ```
-a3da4a9 fix: address review findings for Task 4 (orphaned tasks, dead code)
+77ab411 fix: address review findings for Task 4 (orphaned tasks, dead code)
 ```

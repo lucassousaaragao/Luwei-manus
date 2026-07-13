@@ -19,7 +19,10 @@ daytona_config = DaytonaConfig(
     server_url=daytona_settings.daytona_server_url,
     target=daytona_settings.daytona_target,
 )
-daytona = Daytona(daytona_config)
+try:
+    daytona = Daytona(daytona_config)
+except Exception:
+    daytona = None
 
 
 @dataclass

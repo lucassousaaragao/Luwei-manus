@@ -31,6 +31,15 @@ async function request<T = any>(path: string, options?: RequestInitWithTimeout):
 }
 
 export const api = {
+  getSessions: () => request('/api/chat/sessions'),
+  createSession: (title: string, model: string) =>
+    request('/api/chat/sessions', { method: 'POST', body: JSON.stringify({ title, model }) }),
+  getSession: (id: string) => request(`/api/chat/sessions/${id}`),
+  deleteSession: (id: string) =>
+    request(`/api/chat/sessions/${id}`, { method: 'DELETE' }),
+  sendMessage: (sessionId: string, content: string) =>
+    request(`/api/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
+
   login: (email: string, password: string) =>
     request<{ token: string; user: { id: number; email: string; name: string } }>('/api/auth/login', {
       method: 'POST',

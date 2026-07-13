@@ -1,6 +1,6 @@
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';
-// import { WorkspacePage } from './pages/WorkspacePage';
+import { WorkspacePage } from './pages/WorkspacePage';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -16,7 +16,7 @@ function AppContent() {
     );
   }
 
-  return user ? <div /> : <LoginPage />;
+  return user ? <WorkspacePage /> : <LoginPage />;
 }
 
 export default function App() {

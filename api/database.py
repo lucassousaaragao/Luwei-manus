@@ -21,14 +21,26 @@ def init_db():
             name TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
+            workspace_id TEXT,
             title TEXT NOT NULL DEFAULT 'Novo Chat',
             model TEXT NOT NULL DEFAULT 'default',
+            mode TEXT NOT NULL DEFAULT 'chat',
+            speed TEXT NOT NULL DEFAULT 'medium',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
         );
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,6 +49,18 @@ def init_db():
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE TABLE IF NOT EXISTS mcp_configs (
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'stdio',
+            command TEXT DEFAULT '',
+            url TEXT DEFAULT '',
+            args TEXT DEFAULT '[]',
+            enabled INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
         );
     """)
     conn.commit()

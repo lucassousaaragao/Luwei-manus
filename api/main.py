@@ -1,5 +1,4 @@
 import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,29 +15,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.on_event("startup")
 def startup():
     init_db()
 
-
 from api.auth import router as auth_router
 from api.chat import router as chat_router
 from api.ws import router as ws_router
+from api.models import router as models_router
+from api.workspaces import router as workspaces_router
+from api.mcp_routes import router as mcp_router
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(ws_router)
-
+app.include_router(models_router)
+app.include_router(workspaces_router)
+app.include_router(mcp_router)
 
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
-
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
-
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
         if full_path.startswith("api/") or full_path.startswith("ws/"):

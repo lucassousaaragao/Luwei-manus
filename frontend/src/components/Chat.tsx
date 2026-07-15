@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Sparkles, Brain, Zap, ChevronDown } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -27,31 +27,64 @@ export function Chat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
-  const { messages: wsMessages, connected, send } = useWebSocket(sessionId);
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
+  const { messages: wsMessages, connected, send, clear } = useWebSocket(sessionId);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showSpeed, setShowSpeed] = useState(false);
 
+  const refreshSession = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const data = await api.getSession(sessionId);
+      setMessages(data.messages || []);
+      if (data.model) onModelChange(data.model);
+      if (data.mode) onModeChange(data.mode);
+      if (data.speed) onSpeedChange(data.speed);
+    } catch {}
+  }, [sessionId, onModelChange, onModeChange, onSpeedChange]);
+
   useEffect(() => {
+    clear();
+    setProgress(0);
+    setStatusText('');
+    setRunning(false);
     if (sessionId) {
-      api.getSession(sessionId).then(data => {
-        setMessages(data.messages || []);
-        if (data.model && onModelChange) onModelChange(data.model);
-        if (data.mode && onModeChange) onModeChange(data.mode);
-        if (data.speed && onSpeedChange) onSpeedChange(data.speed);
-      }).catch(() => {});
+      refreshSession();
     } else {
       setMessages([]);
-      setRunning(false);
     }
-  }, [sessionId]);
+  }, [sessionId, clear, refreshSession]);
 
   useEffect(() => {
     const last = wsMessages[wsMessages.length - 1];
-    if (last?.type === 'status' && last.data === 'done') setRunning(false);
-    if (last?.type === 'result') {
-      setMessages(prev => [...prev, { role: 'assistant', content: last.data }]);
+    if (!last) return;
+
+    if (last.type === 'status') {
+      const status = last.data?.status;
+      setStatusText(status);
+      if (status === 'completed') {
+        setRunning(false);
+        setProgress(100);
+        refreshSession();
+      } else if (status === 'running') {
+        setRunning(true);
+      } else if (status === 'cancelled' || status === 'failed') {
+        setRunning(false);
+      }
     }
-  }, [wsMessages]);
+    if (last.type === 'progress') {
+      setProgress(last.data?.progress || 0);
+    }
+    if (last.type === 'error') {
+      setRunning(false);
+      setStatusText('error');
+      setMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${last.data?.error || 'Falha na execução'}` }]);
+    }
+    if (last.type === 'log') {
+      setStatusText(last.data?.message || '');
+    }
+  }, [wsMessages, refreshSession]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -61,10 +94,12 @@ export function Chat({
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setRunning(true);
+    setProgress(0);
+    setStatusText('Iniciando...');
     if (sessionId) {
       await api.sendMessage(sessionId, text).catch(() => {});
     }
-    send({ type: 'run', prompt: text, model, mode, speed });
+    send({ type: 'run', prompt: text, model, mode, speed, task_type: 'chat' });
   };
 
   const speeds = [
@@ -133,6 +168,18 @@ export function Chat({
           </>
         )}
         <div className="flex-1" />
+        {running && (
+          <div className="flex items-center gap-2 text-xs" style={{ color: '#8FA99F' }}>
+            <span>{statusText}</span>
+            <div className="w-24 h-1.5 rounded-full overflow-hidden" style={{ background: '#1A2926' }}>
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #7C3AED, #F97316)' }}
+              />
+            </div>
+            <span>{progress}%</span>
+          </div>
+        )}
         {!connected && sessionId && (
           <span className="text-xs font-medium" style={{ color: '#E05050' }}>
             Desconectado

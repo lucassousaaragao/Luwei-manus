@@ -22,18 +22,18 @@ export function WorkspacePage() {
     setModel(res.model || model);
     setMode(res.mode || mode);
     setSpeed(res.speed || speed);
-  }, [model, mode, speed, workspaceId]);
+  }, [model, mode, speed, workspaceId, clearWs]);
 
   const handleSelect = useCallback((id: string) => {
     clearWs();
     setActiveSession(id);
-  }, []);
+  }, [clearWs]);
 
   const handleWorkspaceChange = useCallback((id: string | null) => {
     setWorkspaceId(id);
     setActiveSession(null);
     clearWs();
-  }, []);
+  }, [clearWs]);
 
   const handleModelChange = useCallback(async (m: string) => {
     setModel(m);

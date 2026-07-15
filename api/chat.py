@@ -1,9 +1,16 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends
-from api.database import get_db
+from fastapi import APIRouter, HTTPException, Depends, Query
+from sqlalchemy import select, delete, func, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from api.database_async import get_db
 from api.auth import get_current_user
+from api.permissions import verify_workspace_access, verify_org_access
+from api.db_models import Session, Message, Workspace, WorkspaceMember, UserRole
 
 router = APIRouter(prefix="/api/chat")
 
@@ -13,91 +20,189 @@ class CreateSessionRequest(BaseModel):
     model: str = "default"
     mode: str = "chat"
     speed: str = "medium"
-    workspace_id: str | None = None
+    workspace_id: Optional[str] = None
 
 
 class UpdateSessionRequest(BaseModel):
-    title: str | None = None
-    model: str | None = None
-    mode: str | None = None
-    speed: str | None = None
+    title: Optional[str] = None
+    model: Optional[str] = None
+    mode: Optional[str] = None
+    speed: Optional[str] = None
 
 
 @router.get("/sessions")
-def list_sessions(user=Depends(get_current_user), workspace_id: str | None = None):
-    db = get_db()
+async def list_sessions(
+    workspace_id: Optional[str] = None,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    query = (
+        select(Session)
+        .where(Session.user_id == user["id"], Session.organization_id == user["org_id"])
+        .order_by(desc(Session.updated_at))
+    )
     if workspace_id:
-        rows = db.execute(
-            "SELECT id, title, model, mode, speed, workspace_id, created_at, updated_at FROM sessions WHERE user_id = ? AND workspace_id = ? ORDER BY updated_at DESC",
-            (user["id"], workspace_id),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT id, title, model, mode, speed, workspace_id, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC",
-            (user["id"],),
-        ).fetchall()
-    return [dict(r) for r in rows]
+        query = query.where(Session.workspace_id == workspace_id)
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "title": s.title,
+            "model": s.model,
+            "mode": s.mode,
+            "speed": s.speed,
+            "workspace_id": s.workspace_id,
+            "organization_id": s.organization_id,
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+        }
+        for s in sessions
+    ]
 
 
 @router.post("/sessions")
-def create_session(req: CreateSessionRequest, user=Depends(get_current_user)):
+async def create_session(
+    req: CreateSessionRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if req.workspace_id:
+        has_access = await verify_workspace_access(db, req.workspace_id, user["id"])
+        if not has_access:
+            raise HTTPException(403, "No access to workspace")
+
     session_id = str(uuid.uuid4())
-    db = get_db()
-    now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "INSERT INTO sessions (id, user_id, workspace_id, title, model, mode, speed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (session_id, user["id"], req.workspace_id, req.title, req.model, req.mode, req.speed, now, now),
+    now = datetime.now(timezone.utc)
+    session = Session(
+        id=session_id,
+        user_id=user["id"],
+        workspace_id=req.workspace_id,
+        organization_id=user["org_id"],
+        title=req.title,
+        model=req.model,
+        mode=req.mode,
+        speed=req.speed,
+        created_at=now,
+        updated_at=now,
     )
-    db.commit()
-    return {"id": session_id, "title": req.title, "model": req.model, "mode": req.mode, "speed": req.speed, "workspace_id": req.workspace_id}
+    db.add(session)
+    await db.flush()
+    return {
+        "id": session.id,
+        "title": session.title,
+        "model": session.model,
+        "mode": session.mode,
+        "speed": session.speed,
+        "workspace_id": session.workspace_id,
+        "organization_id": session.organization_id,
+    }
 
 
 @router.get("/sessions/{session_id}")
-def get_session(session_id: str, user=Depends(get_current_user)):
-    db = get_db()
-    session = db.execute(
-        "SELECT * FROM sessions WHERE id = ? AND user_id = ?",
-        (session_id, user["id"]),
-    ).fetchone()
+async def get_session(
+    session_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == user["id"],
+            Session.organization_id == user["org_id"],
+        )
+    )
+    session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(404, "Session not found")
-    messages = db.execute(
-        "SELECT id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at",
-        (session_id,),
-    ).fetchall()
-    return {"session": dict(session), "messages": [dict(m) for m in messages]}
+
+    messages_result = await db.execute(
+        select(Message)
+        .where(Message.session_id == session_id)
+        .order_by(Message.created_at)
+    )
+    messages = messages_result.scalars().all()
+
+    return {
+        "session": {
+            "id": session.id,
+            "title": session.title,
+            "model": session.model,
+            "mode": session.mode,
+            "speed": session.speed,
+            "workspace_id": session.workspace_id,
+            "organization_id": session.organization_id,
+            "created_at": session.created_at,
+            "updated_at": session.updated_at,
+        },
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "metadata": m.metadata_,
+                "created_at": m.created_at,
+            }
+            for m in messages
+        ],
+    }
 
 
 @router.put("/sessions/{session_id}")
-def update_session(session_id: str, req: UpdateSessionRequest, user=Depends(get_current_user)):
-    db = get_db()
-    session = db.execute(
-        "SELECT id FROM sessions WHERE id = ? AND user_id = ?",
-        (session_id, user["id"]),
-    ).fetchone()
+async def update_session(
+    session_id: str,
+    req: UpdateSessionRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == user["id"],
+            Session.organization_id == user["org_id"],
+        )
+    )
+    session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(404, "Session not found")
+
     updates = {}
-    if req.title is not None: updates["title"] = req.title
-    if req.model is not None: updates["model"] = req.model
-    if req.mode is not None: updates["mode"] = req.mode
-    if req.speed is not None: updates["speed"] = req.speed
+    if req.title is not None:
+        updates["title"] = req.title
+    if req.model is not None:
+        updates["model"] = req.model
+    if req.mode is not None:
+        updates["mode"] = req.mode
+    if req.speed is not None:
+        updates["speed"] = req.speed
     if updates:
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        db.execute(
-            f"UPDATE sessions SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?",
-            (*updates.values(), session_id),
-        )
-        db.commit()
+        updates["updated_at"] = datetime.now(timezone.utc)
+        for k, v in updates.items():
+            setattr(session, k, v)
+    await db.commit()
     return {"ok": True}
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str, user=Depends(get_current_user)):
-    db = get_db()
-    db.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-    db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user["id"]))
-    db.commit()
+async def delete_session(
+    session_id: str,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == user["id"],
+            Session.organization_id == user["org_id"],
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    await db.execute(delete(Message).where(Message.session_id == session_id))
+    await db.delete(session)
+    await db.commit()
     return {"ok": True}
 
 
@@ -106,19 +211,26 @@ class SendMessageRequest(BaseModel):
 
 
 @router.post("/sessions/{session_id}/messages")
-def send_message(session_id: str, req: SendMessageRequest, user=Depends(get_current_user)):
-    db = get_db()
-    session = db.execute(
-        "SELECT id FROM sessions WHERE id = ? AND user_id = ?",
-        (session_id, user["id"]),
-    ).fetchone()
+async def send_message(
+    session_id: str,
+    req: SendMessageRequest,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == user["id"],
+            Session.organization_id == user["org_id"],
+        )
+    )
+    session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(404, "Session not found")
-    now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-        (session_id, req.content, now),
-    )
-    db.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
-    db.commit()
+
+    now = datetime.now(timezone.utc)
+    message = Message(session_id=session_id, role="user", content=req.content, created_at=now)
+    db.add(message)
+    session.updated_at = now
+    await db.commit()
     return {"ok": True}

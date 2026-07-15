@@ -7,7 +7,13 @@ export function SettingsPanel({ onClose, workspaceId }: { onClose: () => void; w
   const [providers, setProviders] = useState<any[]>([]);
 
   useEffect(() => {
-    api.getProviders().then(setProviders).catch(() => {});
+    api.getProviders().then((data: any) => {
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        setProviders(Object.entries(data).map(([key, val]: [string, any]) => ({ name: key, ...val })));
+      } else {
+        setProviders(data);
+      }
+    }).catch(() => {});
   }, []);
 
   return (

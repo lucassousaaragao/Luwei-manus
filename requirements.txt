@@ -46,3 +46,11 @@ pyjwt>=2.9.0
 bcrypt>=4.2.0
 python-multipart>=0.0.18
 websockets>=14.0
+
+# Database
+sqlalchemy~=2.0.32
+alembic~=1.13.1
+asyncpg~=0.29.0
+
+# Storage
+boto3~=1.37.18

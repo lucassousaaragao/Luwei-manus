@@ -3,7 +3,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from api.database import init_db
+
+from api.database_async import init_db
+from api.auth import router as auth_router
+from api.chat import router as chat_router
+from api.ws import router as ws_router
+from api.models import router as models_router
+from api.workspaces import router as workspaces_router
+from api.mcp_routes import router as mcp_router
+from api.tasks import router as tasks_router
+from api.services.task_service import resume_pending_tasks
 
 app = FastAPI(title="Luwei Assistant API")
 
@@ -16,21 +25,18 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-def startup():
-    init_db()
+async def startup():
+    await init_db()
+    # Mark interrupted tasks as failed
+    await resume_pending_tasks()
 
-from api.auth import router as auth_router
-from api.chat import router as chat_router
-from api.ws import router as ws_router
-from api.models import router as models_router
-from api.workspaces import router as workspaces_router
-from api.mcp_routes import router as mcp_router
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(ws_router)
 app.include_router(models_router)
 app.include_router(workspaces_router)
 app.include_router(mcp_router)
+app.include_router(tasks_router)
 
 @app.get("/api/health")
 def health():

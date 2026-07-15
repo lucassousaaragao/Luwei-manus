@@ -7,7 +7,7 @@ from api.auth import get_current_user
 router = APIRouter(prefix="/api/models")
 
 MODELS_CATALOG = {
-    "default": {"name": "Padrão (config)", "provider": "config"},
+    "default": {"name": "Padrão (DeepSeek)", "provider": "config", "models": ["deepseek-chat"]},
     "deepseek": {"name": "DeepSeek", "provider": "deepseek", "models": ["deepseek-chat", "deepseek-reasoner"]},
     "opencode": {"name": "OpenCode Go", "provider": "opencode", "models": ["claude-sonnet-4-20250514", "claude-haiku-4-20250514"]},
     "kimi": {"name": "KIMI (Moonshot)", "provider": "kimi", "models": ["moonshot-v1-8k", "moonshot-v1-32k"]},
